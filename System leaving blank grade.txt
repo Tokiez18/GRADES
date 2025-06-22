@@ -1,0 +1,2128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Gradebook System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Base styles for all devices */
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Table cell editing highlight */
+        .table-cell-editable { background-color: #fef9c3; cursor: pointer; }
+        .table-cell-editable:focus { outline: 2px solid #3b82f6; background-color: #ffffff; }
+        
+        /* Chart container responsiveness */
+        .chart-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 800px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 300px; 
+            max-height: 40vh; /* Responsive height */
+        }
+        @media (min-width: 768px) { 
+            .chart-container { height: 350px; } /* Taller on desktop */
+        }
+        
+        /* Table padding and sticky header */
+        th, td { text-align: left; padding: 12px 16px; } /* Default padding for desktop */
+        thead th { position: sticky; top: 0; background-color: #f3f4f6; z-index: 10; }
+        
+        /* Sortable headers */
+        .sortable-header { cursor: pointer; user-select: none; }
+        .sortable-header:hover { background-color: #e5e7eb; }
+        .sort-icon { display: inline-block; width: 0; height: 0; margin-left: 8px; vertical-align: middle; }
+        .sort-asc .sort-icon { border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 5px solid #6b7280; }
+        .sort-desc .sort-icon { border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #6b7280; }
+        
+        /* Delete button styling */
+        .delete-btn {
+            background-color: #ef4444; /* Red-500 */
+            color: white;
+            padding: 6px 10px;
+            border-radius: 0.375rem; /* rounded-md */
+            font-weight: 500; /* font-medium */
+            transition: background-color 0.2s;
+        }
+        .delete-btn:hover {
+            background-color: #dc2626; /* Red-600 */
+        }
+        .delete-col {
+            width: 80px; /* Give delete column a fixed width */
+            text-align: center;
+        }
+        .highlighted-row {
+            background-color: #e0f2fe; /* Light blue-100 */
+        }
+        
+        /* Context Menu styles */
+        #contextMenu {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            padding: 8px;
+            display: none; /* Hidden by default */
+        }
+        #contextMenu button {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            text-align: left;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 0.875rem;
+            color: #4a5568;
+            transition: background-color 0.15s ease-in-out;
+        }
+        #contextMenu button:hover {
+            background-color: #f3f4f6;
+        }
+        #contextMenu button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: transparent;
+        }
+
+        /* Custom Confirmation Modal & User Management Modal Overlays */
+        #customConfirmModalOverlay, #userManagementModalOverlay, #analysisModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s ease-in-out;
+            padding: 1rem; /* Added padding for mobile */
+            box-sizing: border-box; /* Include padding in width/height */
+        }
+        #customConfirmModalOverlay.visible, #userManagementModalOverlay.visible, #analysisModalOverlay.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        /* Modal Content Styling */
+        #customConfirmModalContent, #userManagementModalContent, #analysisModalContent {
+            background-color: white;
+            padding: 24px;
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            width: 100%; /* Changed to 100% for better mobile fit */
+            max-width: 600px; /* Max width remains for larger screens */
+            text-align: center;
+            transform: translateY(-20px);
+            transition: transform 0.3s ease-in-out;
+            max-height: 90vh; /* Allow scrolling for user list */
+            overflow-y: auto;
+        }
+        @media (min-width: 640px) { /* sm breakpoint */
+             #customConfirmModalContent, #userManagementModalContent, #analysisModalContent {
+                width: 90%; /* On larger mobile/tablet, use 90% */
+            }
+        }
+        #customConfirmModalOverlay.visible #customConfirmModalContent, 
+        #userManagementModalOverlay.visible #userManagementModalContent,
+        #analysisModalOverlay.visible #analysisModalContent {
+            transform: translateY(0);
+        }
+        #customConfirmModalContent p, #userManagementModalContent p, #analysisModalContent p {
+            margin-bottom: 20px;
+            font-size: 1.125rem;
+            color: #333;
+        }
+        #customConfirmModalContent div, #userManagementModalContent div, #analysisModalContent div {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+        #customConfirmModalContent button, #userManagementModalContent button, #analysisModalContent button {
+            padding: 10px 20px;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #customConfirmModalContent #confirmDeleteBtn {
+            background-color: #ef4444;
+            color: white;
+        }
+        #customConfirmModalContent #confirmDeleteBtn:hover {
+            background-color: #dc2626;
+        }
+        #customConfirmModalContent #cancelDeleteBtn {
+            background-color: #e5e7eb;
+            color: #4a5568;
+        }
+        #customConfirmModalContent #cancelDeleteBtn:hover {
+            background-color: #d1d5db;
+        }
+
+        /* User Management Modal Specifics */
+        #userManagementModalContent .user-list {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        #userManagementModalContent .user-list th,
+        #userManagementModalContent .user-list td {
+            border: 1px solid #e2e8f0; /* gray-200 */
+            padding: 8px;
+            text-align: left;
+        }
+        #userManagementModalContent .user-list th {
+            background-color: #f3f4f6; /* gray-100 */
+            font-weight: 600;
+        }
+        #userManagementModalContent .user-list .action-buttons-container {
+            display: flex;
+            gap: 4px; /* Small gap between buttons */
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        }
+        #userManagementModalContent .user-list .action-buttons-container button {
+            padding: 4px 8px;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            font-size: 0.8rem;
+            transition: background-color 0.2s;
+            white-space: nowrap; /* Prevent button text from wrapping */
+        }
+        #userManagementModalContent .user-list .delete-user-btn {
+            background-color: #ef4444;
+            color: white;
+        }
+        #userManagementModalContent .user-list .delete-user-btn:hover {
+            background-color: #dc2626;
+        }
+        #userManagementModalContent .user-list .show-password-btn {
+            background-color: #4a5568; /* Darker gray for show password */
+            color: white;
+        }
+        #userManagementModalContent .user-list .show-password-btn:hover {
+            background-color: #2d3748; /* Even darker on hover */
+        }
+        #userManagementModalContent .user-list .assign-password-btn {
+            background-color: #3b82f6; /* Blue-500 */
+            color: white;
+        }
+        #userManagementModalContent .user-list .assign-password-btn:hover {
+            background-color: #2563eb; /* Blue-600 */
+        }
+        #userManagementModalContent .user-list .password-reset-input-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #userManagementModalContent .user-list .password-reset-input-group input {
+            flex-grow: 1;
+            padding: 4px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 0.25rem;
+            min-width: 100px; /* Ensure input is not too small */
+        }
+        #userManagementModalContent .user-list .password-reset-input-group button {
+            padding: 4px 8px;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            font-size: 0.8rem;
+        }
+        #userManagementModalContent .user-list .password-reset-input-group .set-btn {
+            background-color: #22c55e; /* Green-500 */
+            color: white;
+        }
+        #userManagementModalContent .user-list .password-reset-input-group .set-btn:hover {
+            background-color: #16a34a; /* Green-600 */
+        }
+        #userManagementModalContent .user-list .password-reset-input-group .cancel-btn {
+            background-color: #9ca3af; /* Gray-400 */
+            color: white;
+        }
+        #userManagementModalContent .user-list .password-reset-input-group .cancel-btn:hover {
+            background-color: #6b7280; /* Gray-500 */
+        }
+
+        #userManagementModalContent form {
+            display: grid;
+            grid-template-columns: 1fr; /* Single column on mobile */
+            gap: 16px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        @media (min-width: 640px) { /* sm breakpoint */
+            #userManagementModalContent form {
+                grid-template-columns: 1fr 1fr; /* Two columns on larger screens */
+            }
+        }
+        #userManagementModalContent form label {
+            font-weight: 600;
+            color: #4a5568;
+            align-self: center;
+        }
+        #userManagementModalContent form input,
+        #userManagementModalContent form select {
+            padding: 10px;
+            border: 1px solid #cbd5e0; /* gray-300 */
+            border-radius: 0.375rem;
+            width: 100%;
+        }
+        #userManagementModalContent .form-row {
+            grid-column: span 1; /* Default to single column */
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        @media (min-width: 640px) { /* sm breakpoint */
+            #userManagementModalContent .form-row {
+                grid-column: span 2; /* Span two columns on larger screens */
+            }
+        }
+        #userManagementModalContent .form-row.buttons {
+            justify-content: center;
+        }
+        #userManagementModalContent .form-row.buttons button {
+            width: auto;
+        }
+        .security-warning {
+            color: #dc2626; /* red-600 */
+            background-color: #fee2e2; /* red-100 */
+            border: 1px solid #ef4444; /* red-500 */
+            padding: 10px;
+            border-radius: 0.375rem;
+            margin-top: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-align: left;
+        }
+
+        /* Login Screen specific styles for wine red background */
+        #loginScreen {
+            background-color: #800000; /* Wine Red */
+        }
+
+        /* Styles for the "Generate Remarks" button */
+        .generate-remarks-btn {
+            background-color: #10b981; /* Green-500 */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            font-size: 0.75rem; /* Smaller font size */
+            transition: background-color 0.2s;
+            margin-left: 8px; /* Space from remarks text */
+            white-space: nowrap; /* Prevent button text from wrapping */
+            vertical-align: middle; /* Align with text baseline */
+        }
+        .generate-remarks-btn:hover {
+            background-color: #059669; /* Green-600 */
+        }
+        .generate-remarks-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        /* Style for the "Analyze Performance" button */
+        .analyze-performance-btn {
+            background-color: #6366f1; /* Indigo-500 */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            font-size: 0.75rem;
+            transition: background-color 0.2s;
+            margin-top: 4px; /* Space between text and button */
+            display: block; /* Make it a block element to take full width of cell if needed */
+            width: fit-content; /* Adjust width to content */
+        }
+        .analyze-performance-btn:hover {
+            background-color: #4f46e5; /* Indigo-600 */
+        }
+        .analyze-performance-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Analysis Modal Content */
+        #analysisModalContent {
+            text-align: left; /* Align text within modal to left */
+        }
+        #analysisModalContent h3 {
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        #analysisModalContent h4 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        #analysisModalContent ul {
+            list-style-type: disc;
+            margin-left: 1.25rem;
+        }
+        #analysisModalContent li {
+            margin-bottom: 0.25rem;
+        }
+        #analysisModalContent .loading-message {
+            text-align: center;
+            font-style: italic;
+            color: #6b7280;
+        }
+        /* Style for the "Suggest Curriculum" button */
+        .suggest-curriculum-btn {
+            background-color: #0d9488; /* Teal-600 */
+            color: white;
+            padding: 8px 16px;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            display: block;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .suggest-curriculum-btn:hover {
+            background-color: #0f766e; /* Teal-700 */
+        }
+        .suggest-curriculum-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+
+        /* Print specific styles */
+        @media print {
+            body {
+                background-color: white !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .container, main {
+                width: 100% !important;
+                max-width: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            header, #controls, #visualization, #contextMenu, #customConfirmModalOverlay,
+            .delete-col, .table-cell-editable, #loginScreen, #userManagementModalOverlay, 
+            .generate-remarks-btn, .analyze-performance-btn, #analysisModalOverlay, .suggest-curriculum-btn {
+                display: none !important;
+            }
+            table {
+                width: 100% !important;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            th, td {
+                border: 1px solid #000 !important;
+                padding: 8px !important;
+                text-align: left !important;
+                background-color: white !important;
+                color: black !important;
+            }
+            thead th {
+                background-color: #e0e0e0 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .highlighted-row {
+                background-color: transparent !important;
+            }
+            .print-title {
+                display: block !important;
+                text-align: center;
+                font-size: 1.5rem;
+                font-weight: bold;
+                margin-bottom: 15px;
+                color: black;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="fixed inset-0 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl border border-gray-200 w-96">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Welcome to Gradebook</h2>
+            <div class="mb-4">
+                <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">Username:</label>
+                <input type="text" id="username" class="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your username">
+            </div>
+            <div class="mb-6">
+                <label for="password" class="block text-gray-700 text-sm font-semibold mb-2">Password:</label>
+                <input type="password" id="password" class="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your password">
+            </div>
+            <button id="loginButton" class="w-full bg-indigo-600 text-white p-3 rounded-md font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">Login</button>
+            <p id="loginMessage" class="mt-4 text-center text-red-500 text-sm"></p>
+            <div class="mt-6 text-sm text-gray-600 text-center hidden">
+                <p><strong>Admin:</strong> U: admin, P: admin123</p>
+                <p>Teacher usernames will be displayed here after logging in as Admin and setting them up.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="mainAppContainer" class="container mx-auto p-4 sm:p-6 md:p-8 hidden">
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Interactive Gradebook System</h1>
+            <p class="mt-2 text-md text-gray-600">A web-based simulation of the role-based XLSM grade entry system with quarterly grading.</p>
+        </header>
+
+        <main>
+            <!-- Control and Information Section -->
+            <section id="controls" class="mb-8 p-6 bg-white rounded-lg shadow-md border border-gray-200">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                    <div class="flex-1">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-2">System Controls</h2>
+                        <p class="text-gray-600">This application demonstrates how access to data is controlled by user roles and how grades are managed by quarter. Select a role and a quarter to see the gradebook and charts update dynamically. You can also filter by grade level.</p>
+                    </div>
+                    <!-- Adjusted for mobile responsiveness, stacking vertically by default -->
+                    <div class="flex flex-col sm:flex-row gap-4 p-4 bg-gray-50 rounded-lg border w-full md:w-auto">
+                        <div class="flex items-center gap-2 w-full">
+                            <label for="roleSelector" class="font-semibold text-gray-700 whitespace-nowrap">👤 Role:</label>
+                            <select id="roleSelector" class="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                                <option value="None">Logged Out</option>
+                                <!-- Roles will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2 w-full">
+                            <label for="quarterSelector" class="font-semibold text-gray-700 whitespace-nowrap">🗓️ Quarter:</label>
+                            <select id="quarterSelector" class="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                <option value="Q1">1st Quarter</option>
+                                <option value="Q2">2nd Quarter</option>
+                                <option value="Q3">3rd Quarter</option>
+                                <option value="Q4">4th Quarter</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2 w-full" id="gradeLevelFilterContainer">
+                            <label for="gradeLevelFilter" class="font-semibold text-gray-700 whitespace-nowrap">🎓 Grade Level:</label>
+                            <select id="gradeLevelFilter" class="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                <option value="All">All Levels</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                            </select>
+                        </div>
+                        <button id="logoutButton" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 whitespace-nowrap w-full">Logout</button>
+                    </div>
+                </div>
+                   <div id="statusMessage" class="mt-4 text-center text-indigo-600 font-medium h-6"></div>
+
+                   <!-- Add Student Section -->
+                   <div class="mt-6 pt-4 border-t border-gray-200">
+                       <h3 class="text-lg font-semibold text-gray-800 mb-2">➕ Add New Student (Admin Only)</h3>
+                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
+                           <input type="text" id="newStudentLastName" placeholder="Last Name" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <input type="text" id="newStudentGivenName" placeholder="Given Name" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <input type="text" id="newStudentMiddleName" placeholder="Middle Name (Optional)" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <input type="text" id="newStudentExtension" placeholder="Extension (Optional)" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <input type="text" id="newStudentGradeLevel" placeholder="Grade Level (e.g., 10)" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <input type="text" id="newStudentSection" placeholder="Section (e.g., A)" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                           <select type="text" id="newStudentSex" class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" disabled>
+                               <option value="">Select Sex</option>
+                               <option value="Male">Male</option>
+                               <option value="Female">Female</option>
+                           </select>
+                           <div class="lg:col-span-4 text-center">
+                               <button id="addStudentButton" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Add Student</button>
+                           </div>
+                       </div>
+                       <p id="addStudentMessage" class="mt-2 text-sm text-red-500 h-4"></p>
+                   </div>
+                   
+                   <!-- Admin: Manage Users Button -->
+                   <div class="mt-6 pt-4 border-t border-gray-200 text-center admin-only-feature" style="display: none;">
+                       <button id="manageUsersButton" class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">⚙️ Manage Users</button>
+                   </div>
+
+                   <!-- Print Button -->
+                   <div class="mt-6 pt-4 border-t border-gray-200 text-center">
+                       <button id="printGradebookButton" class="px-6 py-2 bg-gray-700 text-white font-semibold rounded-md shadow-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">🖨️ Print Gradebook</button>
+                   </div>
+            </section>
+            
+            <!-- Gradebook Table Section -->
+            <section id="gradebook" class="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                   <h2 class="text-xl font-semibold text-gray-800 p-4 border-b">Student Grade Sheet</h2>
+                   <!-- Print-specific title, hidden normally, shown during print -->
+                   <div class="print-title" style="display: none;"></div>
+                   <!-- Added overflow-x-auto to allow horizontal scrolling on small screens -->
+                   <div class="overflow-x-auto">
+                     <table class="w-full min-w-max text-sm">
+                         <thead>
+                             <tr class="bg-gray-100">
+                                 <th class="p-3 sortable-header" data-sort-key="lastName">Last Name <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="givenName">Given Name <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="middleName">Middle Name <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="extension">Ext. <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="gradeLevel">Grade Level <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="section">Section <span class="sort-icon"></span></th>
+                                 <th class="p-3 sortable-header" data-sort-key="sex">Sex <span class="sort-icon"></span></th>
+                                 <th class="p-3 subject-col" data-subject="Filipino">Filipino</th>
+                                 <th class="p-3 subject-col" data-subject="English">English</th>
+                                 <th class="p-3 subject-col" data-subject="Math">Math</th>
+                                 <th class="p-3 subject-col" data-subject="Science">Science</th>
+                                 <th class="p-3 subject-col" data-subject="AP">Araling Panlipunan</th>
+                                 <th class="p-3 subject-col" data-subject="ESP">ESP</th>
+                                 <th class="p-3 subject-col" data-subject="TLE">TLE</th>
+                                 <th class="p-3 subject-col" data-subject="MAPEH">MAPEH (Overall)</th>
+                                 <th class="p-3 subject-col" data-subject="MAPEH-Music">MAPEH - Music</th>
+                                 <th class="p-3 subject-col" data-subject="MAPEH-Arts">MAPEH - Arts</th>
+                                 <th class="p-3 subject-col" data-subject="MAPEH-PE">MAPEH - P.E.</th>
+                                 <th class="p-3 subject-col" data-subject="MAPEH-Health">MAPEH - Health</th>
+                                 <th class="p-3 subject-col sortable-header" data-sort-key="generalAverage">General Average <span class="sort-icon"></span></th>
+                                 <th class="p-3 subject-col delete-col" data-subject="Admin">Actions</th>
+                                 <th class="p-3 subject-col" data-subject="Remarks">Remarks</th>
+                             </tr>
+                         </thead>
+                         <tbody id="gradebook-body" class="divide-y divide-gray-200">
+                             <!-- Student rows will be injected here by JavaScript -->
+                         </tbody>
+                     </table>
+                   </div>
+            </section>
+
+            <!-- Context Menu (hidden by default) -->
+            <div id="contextMenu">
+                <button id="modifyStudentBtn">Modify Student</button>
+                <button id="deleteStudentBtn">Delete Student</button>
+            </div>
+
+            <!-- Custom Confirmation Modal -->
+            <div id="customConfirmModalOverlay">
+                <div id="customConfirmModalContent">
+                    <p id="confirmMessage">Are you sure you want to proceed?</p>
+                    <div>
+                        <button id="confirmDeleteBtn">Confirm</button>
+                        <button id="cancelDeleteBtn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Management Modal -->
+            <div id="userManagementModalOverlay">
+                <div id="userManagementModalContent">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Manage Teacher Accounts</h3>
+                    <div class="security-warning">
+                        <strong>Security Warning:</strong> For demonstration purposes, passwords are shown here. In a real application, passwords should *never* be stored or displayed in plain text or easily reversible formats. Always use strong, one-way hashing for secure password management.
+                    </div>
+                    <div class="mb-6 mt-4">
+                        <h4 class="text-lg font-medium text-gray-700 mb-2">Existing Teachers:</h4>
+                        <div class="overflow-x-auto max-h-48 overflow-y-auto border rounded-md mb-4">
+                            <table class="user-list">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Role</th>
+                                        <th>Grade Levels</th>
+                                        <th>Sections</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="userListBody">
+                                    <!-- User rows will be injected here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="mb-6 pt-4 border-t border-gray-200">
+                        <h4 class="text-lg font-medium text-gray-700 mb-2">Add New Teacher:</h4>
+                        <form id="addUserForm" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <label for="newTeacherUsername" class="col-span-1">Username:</label>
+                            <input type="text" id="newTeacherUsername" class="col-span-1 p-2 border rounded-md" required>
+                            
+                            <label for="newTeacherPassword" class="col-span-1">Password:</label>
+                            <input type="password" id="newTeacherPassword" class="col-span-1 p-2 border rounded-md" required>
+                            
+                            <label for="newTeacherRole" class="col-span-1">Assign Subject Role:</label>
+                            <select id="newTeacherRole" class="col-span-1 p-2 border rounded-md">
+                                <option value="Admin">Admin</option>
+                                <option value="Teacher - Filipino">Teacher - Filipino</option>
+                                <option value="Teacher - English">Teacher - English</option>
+                                <option value="Teacher - Math">Teacher - Math</option>
+                                <option value="Teacher - Science">Teacher - Science</option>
+                                <option value="Teacher - AP">Teacher - Araling Panlipunan</option>
+                                <option value="Teacher - ESP">Teacher - ESP</option>
+                                <option value="Teacher - TLE">Teacher - TLE</option>
+                                <option value="Teacher - MAPEH">Teacher - MAPEH</option>
+                                <option value="Teacher - All Subjects">Teacher - All Subjects</option>
+                            </select>
+
+                            <label for="newTeacherGradeLevels" class="col-span-1">Grade Levels (comma-separated):</label>
+                            <input type="text" id="newTeacherGradeLevels" placeholder="e.g., 10,11" class="col-span-1 p-2 border rounded-md">
+
+                            <label for="newTeacherSections" class="col-span-1">Sections (comma-separated):</label>
+                            <input type="text" id="newTeacherSections" placeholder="e.g., A,B" class="col-span-1 p-2 border rounded-md">
+                            
+                            <div class="col-span-full flex justify-center mt-4">
+                                <button type="submit" class="px-6 py-2 bg-green-600 text-white font-semibold rounded-md shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">Add Teacher</button>
+                            </div>
+                        </form>
+                        <p id="addTeacherMessage" class="mt-2 text-sm text-red-500 h-4 text-center"></p>
+                    </div>
+
+                    <div class="mt-4 flex justify-center">
+                        <button id="closeUserManagementModal" class="px-6 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Analysis Modal -->
+            <div id="analysisModalOverlay">
+                <div id="analysisModalContent">
+                    <h3>Student Performance Analysis</h3>
+                    <div id="analysisContent" class="loading-message">Analyzing student data...</div>
+                    <button id="suggestCurriculumButton" class="suggest-curriculum-btn" disabled>Suggest Curriculum</button>
+                    <div>
+                        <button id="closeAnalysisModal" class="px-6 py-2 bg-gray-500 text-white font-semibold rounded-md shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visualization Section (Charts) -->
+            <section id="visualization" class="mt-8 p-6 bg-white rounded-lg shadow-md border border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Grade Distribution Chart</h2>
+                <div class="chart-container">
+                    <canvas id="gradeDistributionChart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables (provided by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        // Initialize Firebase
+        let app;
+        let db;
+        let auth;
+        let currentUserId = null;
+        let currentUserRole = 'None';
+        let currentUserGradeLevels = [];
+        let currentUserSections = [];
+        let isAuthReady = false;
+
+        // UI Elements
+        const loginScreen = document.getElementById('loginScreen');
+        const mainAppContainer = document.getElementById('mainAppContainer');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('loginButton');
+        const loginMessage = document.getElementById('loginMessage');
+        const logoutButton = document.getElementById('logoutButton');
+
+        const roleSelector = document.getElementById('roleSelector');
+        const quarterSelector = document.getElementById('quarterSelector');
+        const gradeLevelFilter = document.getElementById('gradeLevelFilter');
+        const gradebookBody = document.getElementById('gradebook-body');
+        const statusMessage = document.getElementById('statusMessage');
+
+        const newStudentLastNameInput = document.getElementById('newStudentLastName');
+        const newStudentGivenNameInput = document.getElementById('newStudentGivenName');
+        const newStudentMiddleNameInput = document.getElementById('newStudentMiddleName');
+        const newStudentExtensionInput = document.getElementById('newStudentExtension');
+        const newStudentGradeLevelInput = document.getElementById('newStudentGradeLevel');
+        const newStudentSectionInput = document.getElementById('newStudentSection');
+        const newStudentSexSelect = document.getElementById('newStudentSex');
+        const addStudentButton = document.getElementById('addStudentButton');
+        const addStudentMessage = document.getElementById('addStudentMessage');
+
+        const manageUsersButton = document.getElementById('manageUsersButton');
+        const userManagementModalOverlay = document.getElementById('userManagementModalOverlay');
+        const userListBody = document.getElementById('userListBody');
+        const addUserForm = document.getElementById('addUserForm');
+        const newTeacherUsernameInput = document.getElementById('newTeacherUsername');
+        const newTeacherPasswordInput = document.getElementById('newTeacherPassword');
+        const newTeacherRoleSelect = document.getElementById('newTeacherRole');
+        const newTeacherGradeLevelsInput = document.getElementById('newTeacherGradeLevels');
+        const newTeacherSectionsInput = document.getElementById('newTeacherSections');
+        const addTeacherMessage = document.getElementById('addTeacherMessage');
+        const closeUserManagementModalButton = document.getElementById('closeUserManagementModal');
+
+        const printGradebookButton = document.getElementById('printGradebookButton');
+
+        const contextMenu = document.getElementById('contextMenu');
+        const modifyStudentBtn = document.getElementById('modifyStudentBtn');
+        const deleteStudentBtn = document.getElementById('deleteStudentBtn');
+
+        const customConfirmModalOverlay = document.getElementById('customConfirmModalOverlay');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+
+        const analysisModalOverlay = document.getElementById('analysisModalOverlay');
+        const analysisContent = document.getElementById('analysisContent');
+        const suggestCurriculumButton = document.getElementById('suggestCurriculumButton');
+        const closeAnalysisModalButton = document.getElementById('closeAnalysisModal');
+
+        let gradeChart = null; // Chart.js instance
+        let studentsData = []; // Array to hold student data
+        let usersData = []; // Array to hold user data (teachers)
+        let sortColumn = 'lastName'; // Changed default sort column
+        let sortDirection = 'asc';
+
+        // Subject mapping for role-based access and general average calculation
+        const subjects = {
+            'Filipino': 'Filipino',
+            'English': 'English',
+            'Math': 'Math',
+            'Science': 'Science',
+            'AP': 'Araling Panlipunan',
+            'ESP': 'ESP',
+            'TLE': 'TLE',
+            'MAPEH': 'MAPEH (Overall)', // This is the calculated overall MAPEH grade
+            'MAPEH-Music': 'MAPEH - Music',
+            'MAPEH-Arts': 'MAPEH - Arts',
+            'MAPEH-PE': 'MAPEH - P.E.',
+            'MAPEH-Health': 'MAPEH - Health'
+        };
+
+        // Core subjects for General Average calculation. MAPEH (Overall) is included here.
+        // The individual MAPEH components are NOT included as they contribute to the MAPEH (Overall)
+        const coreSubjects = ['Filipino', 'English', 'Math', 'Science', 'AP', 'ESP', 'TLE', 'MAPEH'];
+        const mapehSubSubjects = ['MAPEH-Music', 'MAPEH-Arts', 'MAPEH-PE', 'MAPEH-Health'];
+
+        /**
+         * Custom confirmation modal to replace alert/confirm
+         * @param {string} message - The message to display.
+         * @returns {Promise<boolean>} - Resolves true if confirmed, false otherwise.
+         */
+        function customConfirm(message) {
+            confirmMessage.textContent = message;
+            customConfirmModalOverlay.classList.add('visible');
+            return new Promise(resolve => {
+                const confirmHandler = () => {
+                    customConfirmModalOverlay.classList.remove('visible');
+                    confirmDeleteBtn.removeEventListener('click', confirmHandler);
+                    cancelDeleteBtn.removeEventListener('click', cancelHandler);
+                    resolve(true);
+                };
+                const cancelHandler = () => {
+                    customConfirmModalOverlay.classList.remove('visible');
+                    confirmDeleteBtn.removeEventListener('click', confirmHandler);
+                    cancelDeleteBtn.removeEventListener('click', cancelHandler);
+                    resolve(false);
+                };
+                confirmDeleteBtn.addEventListener('click', confirmHandler);
+                cancelDeleteBtn.addEventListener('click', cancelHandler);
+            });
+        }
+
+        /**
+         * Displays a temporary status message in the UI.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success', 'error', or 'info' for styling.
+         */
+        function showStatusMessage(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.className = `mt-4 text-center font-medium h-6`; // Reset classes
+            if (type === 'success') {
+                statusMessage.classList.add('text-green-600');
+            } else if (type === 'error') {
+                statusMessage.classList.add('text-red-600');
+            } else {
+                statusMessage.classList.add('text-indigo-600');
+            }
+            setTimeout(() => {
+                statusMessage.textContent = '';
+                statusMessage.className = `mt-4 text-center font-medium h-6`;
+            }, 3000);
+        }
+
+        /**
+         * Initializes the Firebase app and Firestore instance.
+         * This runs only once when the script loads.
+         */
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            // Initial sign-in or anonymous sign-in
+            onAuthStateChanged(auth, async (user) => {
+                if (!user) {
+                    // If no user is logged in, attempt to sign in with custom token or anonymously
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                            console.log("Signed in with custom token.");
+                        } else {
+                            await signInAnonymously(auth);
+                            console.log("Signed in anonymously.");
+                        }
+                    } catch (error) {
+                        console.error("Error during initial authentication:", error);
+                        loginMessage.textContent = "Authentication error. Please refresh.";
+                    }
+                } else {
+                    // User is now authenticated (either newly or already was)
+                    currentUserId = user.uid;
+                    await fetchUsersAndSetupRoleListener(); // Fetch users and set up listener for current user's role
+                    setupGradebookListeners(); // Set up student data listeners
+                    isAuthReady = true;
+                    console.log("Auth ready. Current User ID:", currentUserId);
+                }
+            });
+        } else {
+            console.warn("Firebase config not found. Running in demo mode without persistence.");
+            loginScreen.classList.remove('hidden');
+            mainAppContainer.classList.add('hidden');
+            loginMessage.textContent = "Firebase is not configured. Data will not be persistent.";
+            // If no Firebase, disable admin features and provide mock data/role selectors
+            roleSelector.disabled = false;
+            setupMockDataAndUI();
+        }
+
+        // Mock data for non-Firebase environments or initial setup
+        const mockStudents = [
+            // Updated student data with separate name fields and MAPEH set to null
+            { id: 'S001', lastName: 'Dela Cruz', givenName: 'Juan', middleName: '', extension: '', gradeLevel: 10, section: 'A', sex: 'Male', grades: { Q1: { Filipino: 85, English: 90, Math: 78, Science: 88, AP: 82, ESP: 92, TLE: 80, 'MAPEH-Music': 85, 'MAPEH-Arts': 88, 'MAPEH-PE': 89, 'MAPEH-Health': 86, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S002', lastName: 'Santos', givenName: 'Maria', middleName: '', extension: '', gradeLevel: 11, section: 'B', sex: 'Female', grades: { Q1: { Filipino: 92, English: 88, Math: 95, Science: 90, AP: 93, ESP: 89, TLE: 91, 'MAPEH-Music': 91, 'MAPEH-Arts': 89, 'MAPEH-PE': 90, 'MAPEH-Health': 90, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S003', lastName: 'Reyes', givenName: 'Pedro', middleName: '', extension: '', gradeLevel: 10, section: 'A', sex: 'Male', grades: { Q1: { Filipino: 75, English: 80, Math: 70, Science: 78, AP: 72, ESP: 85, TLE: 70, 'MAPEH-Music': 75, 'MAPEH-Arts': 78, 'MAPEH-PE': 76, 'MAPEH-Health': 79, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S004', lastName: 'Gonzales', givenName: 'Sarah', middleName: '', extension: '', gradeLevel: 12, section: 'C', sex: 'Female', grades: { Q1: { Filipino: 90, English: 92, Math: 88, Science: 91, AP: 87, ESP: 94, TLE: 89, 'MAPEH-Music': 90, 'MAPEH-Arts': 92, 'MAPEH-PE': 91, 'MAPEH-Health': 90, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S005', lastName: 'Garcia', givenName: 'Chris', middleName: '', extension: '', gradeLevel: 11, section: 'B', sex: 'Male', grades: { Q1: { Filipino: 80, English: 85, Math: 82, Science: 83, AP: 79, ESP: 88, TLE: 81, 'MAPEH-Music': 83, 'MAPEH-Arts': 85, 'MAPEH-PE': 84, 'MAPEH-Health': 84, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S006', lastName: 'Ramirez', givenName: 'Ella', middleName: '', extension: '', gradeLevel: 10, section: 'B', sex: 'Female', grades: { Q1: { Filipino: 88, English: 87, Math: 90, Science: 86, AP: 89, ESP: 85, TLE: 87, 'MAPEH-Music': 87, 'MAPEH-Arts': 88, 'MAPEH-PE': 89, 'MAPEH-Health': 88, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S007', lastName: 'Lee', givenName: 'David', middleName: '', extension: '', gradeLevel: 12, section: 'C', sex: 'Male', grades: { Q1: { Filipino: 95, English: 94, Math: 96, Science: 93, AP: 95, ESP: 96, TLE: 94, 'MAPEH-Music': 95, 'MAPEH-Arts': 94, 'MAPEH-PE': 96, 'MAPEH-Health': 95, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+            { id: 'S008', lastName: 'Kim', givenName: 'Anna', middleName: '', extension: '', gradeLevel: 10, section: 'A', sex: 'Female', grades: { Q1: { Filipino: 70, English: 72, Math: 68, Science: 70, AP: 65, ESP: 75, TLE: 68, 'MAPEH-Music': 69, 'MAPEH-Arts': 71, 'MAPEH-PE': 70, 'MAPEH-Health': 70, MAPEH: null }, Q2: {}, Q3: {}, Q4: {} }, remarks: {} },
+        ];
+
+        const mockUsers = [
+            { username: 'admin', password: 'admin123', role: 'Admin', gradeLevels: [10, 11, 12], sections: ['A', 'B', 'C'], userId: 'admin-user-id' },
+            { username: 'teacher_filipino', password: 'pass123', role: 'Teacher - Filipino', gradeLevels: [10], sections: ['A', 'B'], userId: 'teacher-filipino-id' },
+            { username: 'teacher_math', password: 'pass123', role: 'Teacher - Math', gradeLevels: [11, 12], sections: ['B', 'C'], userId: 'teacher-math-id' },
+            { username: 'teacher_mapeh', password: 'pass123', role: 'Teacher - MAPEH', gradeLevels: [10, 11, 12], sections: ['A', 'B', 'C'], userId: 'teacher-mapeh-id' },
+            { username: 'teacher_all', password: 'pass123', role: 'Teacher - All Subjects', gradeLevels: [10, 11, 12], sections: ['A', 'B', 'C'], userId: 'teacher-all-id' },
+        ];
+
+        // Function to handle data fetching for students
+        function setupGradebookListeners() {
+            if (!db) {
+                console.warn("Firestore not initialized. Cannot set up student data listener.");
+                studentsData = [...mockStudents]; // Use mock data if Firestore not available
+                renderGradebook();
+                return;
+            }
+
+            const studentsColRef = collection(db, `artifacts/${appId}/public/data/students`);
+            onSnapshot(studentsColRef, (snapshot) => {
+                studentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log("Student data updated:", studentsData);
+                renderGradebook();
+                updateChart();
+            }, (error) => {
+                console.error("Error fetching student data:", error);
+                showStatusMessage("Error loading student data.", 'error');
+                // Fallback to mock data on error if needed
+                if (studentsData.length === 0) {
+                    studentsData = [...mockStudents];
+                    renderGradebook();
+                    updateChart();
+                }
+            });
+        }
+
+        // Function to fetch user (teacher/admin) data
+        async function fetchUsersAndSetupRoleListener() {
+            if (!db) {
+                console.warn("Firestore not initialized. Cannot fetch user data.");
+                usersData = [...mockUsers];
+                populateRoleSelector();
+                return;
+            }
+
+            const usersColRef = collection(db, `artifacts/${appId}/public/data/users`);
+            onSnapshot(usersColRef, async (snapshot) => { // Added async here
+                usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log("User data updated:", usersData);
+
+                // --- NEW LOGIC: Seed initial users if the collection is empty ---
+                if (snapshot.empty && usersData.length === 0) {
+                    console.log("Users collection is empty. Seeding initial mock users.");
+                    for (const mockUser of mockUsers) {
+                        // Check if user already exists to prevent duplicate writes on multiple snapshot triggers
+                        const existingUserQuery = query(usersColRef, where("username", "==", mockUser.username));
+                        const existingUserSnapshot = await getDocs(existingUserQuery); // Use getDocs here
+                        if (existingUserSnapshot.empty) {
+                            await addDoc(usersColRef, mockUser);
+                            console.log(`Seeded user: ${mockUser.username}`);
+                        }
+                    }
+                    // After seeding, onSnapshot will fire again, updating usersData
+                    // and then the rest of the logic will proceed correctly.
+                    return; // Exit here to let the next snapshot event handle the UI update
+                }
+                // --- END NEW LOGIC ---
+
+                populateRoleSelector();
+                // Try to set the current user's role if they are already logged in
+                const user = auth.currentUser;
+                if (user && user.isAnonymous) {
+                    // Anonymous user, default to None/Logged Out
+                    roleSelector.value = 'None';
+                    loginScreen.classList.remove('hidden');
+                    mainAppContainer.classList.add('hidden');
+                    roleSelector.disabled = false;
+                } else if (user) {
+                    const loggedInUser = usersData.find(u => u.userId === user.uid);
+                    if (loggedInUser) {
+                        currentUserRole = loggedInUser.role;
+                        currentUserGradeLevels = loggedInUser.gradeLevels || [];
+                        currentUserSections = loggedInUser.sections || [];
+                        roleSelector.value = currentUserRole;
+                        loginScreen.classList.add('hidden');
+                        mainAppContainer.classList.remove('hidden');
+                        applyPermissions();
+                        renderGradebook();
+                        updateChart();
+                    } else {
+                        // User logged in via custom token but not found in users collection (e.g., first run)
+                        console.warn("Logged in user not found in users collection. Assuming anonymous access for now.");
+                        currentUserRole = 'None';
+                        roleSelector.value = 'None';
+                        loginScreen.classList.remove('hidden');
+                        mainAppContainer.classList.add('hidden');
+                        roleSelector.disabled = false;
+                    }
+                } else {
+                    // No user, or logged out.
+                    currentUserRole = 'None';
+                    currentUserGradeLevels = [];
+                    currentUserSections = [];
+                    roleSelector.value = 'None';
+                    loginScreen.classList.remove('hidden');
+                    mainAppContainer.classList.add('hidden');
+                    roleSelector.disabled = false;
+                }
+            }, (error) => {
+                console.error("Error fetching user data:", error);
+                showStatusMessage("Error loading user data.", 'error');
+                // Fallback to mock data if Firestore not available or error
+                usersData = [...mockUsers];
+                populateRoleSelector();
+                roleSelector.disabled = false;
+            });
+        }
+
+        /**
+         * Sets up mock data and UI state for when Firebase is not configured.
+         */
+        function setupMockDataAndUI() {
+            studentsData = [...mockStudents];
+            usersData = [...mockUsers];
+            populateRoleSelector();
+            // For demo mode, make role selector active on load
+            roleSelector.value = 'None'; // Default to logged out
+            renderGradebook();
+            updateChart();
+            applyPermissions(); // Apply permissions for "None" role initially
+        }
+
+        /**
+         * Populates the role selector dropdown with available roles from usersData.
+         */
+        function populateRoleSelector() {
+            roleSelector.innerHTML = '<option value="None">Logged Out</option>';
+            // Add admin first
+            const adminUser = usersData.find(u => u.role === 'Admin');
+            if (adminUser) {
+                const option = document.createElement('option');
+                option.value = adminUser.role;
+                option.textContent = `${adminUser.role} (U: ${adminUser.username}, P: ${adminUser.password})`;
+                roleSelector.appendChild(option);
+            }
+
+            // Add other teachers
+            usersData.filter(u => u.role !== 'Admin').forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.role;
+                option.textContent = `${user.role} (U: ${user.username}, P: ${user.password})`;
+                roleSelector.appendChild(option);
+            });
+        }
+
+        /**
+         * Applies UI permissions based on the current user's role.
+         */
+        function applyPermissions() {
+            const isAdmin = currentUserRole === 'Admin';
+            const isTeacher = currentUserRole.startsWith('Teacher');
+            const isLoggedOut = currentUserRole === 'None';
+
+            // Student Add section
+            newStudentLastNameInput.disabled = !isAdmin;
+            newStudentGivenNameInput.disabled = !isAdmin;
+            newStudentMiddleNameInput.disabled = !isAdmin;
+            newStudentExtensionInput.disabled = !isAdmin;
+            newStudentGradeLevelInput.disabled = !isAdmin;
+            newStudentSectionInput.disabled = !isAdmin;
+            newStudentSexSelect.disabled = !isAdmin;
+            addStudentButton.disabled = !isAdmin;
+
+            // Admin-only features
+            document.querySelectorAll('.admin-only-feature').forEach(el => {
+                el.style.display = isAdmin ? 'block' : 'none';
+            });
+
+            // Adjust table headers visibility for print or different roles
+            document.querySelectorAll('.subject-col').forEach(th => {
+                const subject = th.dataset.subject;
+                if (subject === 'Admin') {
+                    th.classList.toggle('hidden', !isAdmin);
+                    th.classList.toggle('delete-col', isAdmin);
+                } else if (subject === 'Remarks') {
+                    // Remarks column always visible for now
+                } else if (subject && currentUserRole !== 'Admin' && currentUserRole !== 'Teacher - All Subjects') {
+                    // Hide subjects not taught by the current teacher if not admin or all subjects teacher
+                    const teacherSubject = currentUserRole.replace('Teacher - ', '');
+                    const isMapehSub = mapehSubSubjects.includes(subject.replace('MAPEH (Overall)', 'MAPEH')); // Check for MAPEH sub-subjects
+                    const isOverallMapeh = subject === 'MAPEH (Overall)';
+                    const subjectMatch = subjects[subject] === teacherSubject || (teacherSubject === 'MAPEH' && (isMapehSub || isOverallMapeh));
+                    th.classList.toggle('hidden', !subjectMatch);
+                } else {
+                    th.classList.remove('hidden'); // Show all subjects for Admin/Teacher - All Subjects
+                }
+            });
+
+            // Grade Level filter visibility based on role
+            document.getElementById('gradeLevelFilterContainer').classList.toggle('hidden', isLoggedOut);
+
+            // Disable quarter and role selectors if logged out
+            quarterSelector.disabled = isLoggedOut;
+            roleSelector.disabled = isLoggedOut;
+
+            renderGradebook(); // Re-render to apply cell permissions
+            updateChart();
+        }
+
+        /**
+         * Filters students based on the current user's role, selected quarter, and grade level filter.
+         * @returns {Array} - The filtered and sorted list of students.
+         */
+        function getFilteredStudents() {
+            let filteredStudents = studentsData;
+            const selectedGradeLevel = gradeLevelFilter.value;
+
+            // Filter by grade level
+            if (selectedGradeLevel !== 'All') {
+                filteredStudents = filteredStudents.filter(student => student.gradeLevel === parseInt(selectedGradeLevel));
+            }
+
+            // Apply teacher-specific grade level and section filters
+            if (currentUserRole.startsWith('Teacher') && currentUserRole !== 'Teacher - All Subjects') {
+                filteredStudents = filteredStudents.filter(student =>
+                    currentUserGradeLevels.includes(student.gradeLevel) &&
+                    currentUserSections.includes(student.section)
+                );
+            }
+
+            // Sort the filtered students
+            filteredStudents.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+
+                if (sortColumn === 'generalAverage') {
+                    valA = calculateGeneralAverage(a.grades[quarterSelector.value]);
+                    valB = calculateGeneralAverage(b.grades[quarterSelector.value]);
+                }
+
+                if (typeof valA === 'string') {
+                    return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return sortDirection === 'asc' ? valA - valB : valB - valA;
+                }
+            });
+
+            return filteredStudents;
+        }
+
+        /**
+         * Renders the gradebook table with filtered and sorted student data.
+         * Applies cell editability and visibility based on user role.
+         */
+        function renderGradebook() {
+            gradebookBody.innerHTML = '';
+            const currentQuarter = quarterSelector.value;
+            const filteredStudents = getFilteredStudents();
+
+            const isAdmin = currentUserRole === 'Admin';
+            const canEditAllSubjects = currentUserRole === 'Admin' || currentUserRole === 'Teacher - All Subjects';
+            const teacherSubject = currentUserRole.replace('Teacher - ', '');
+
+            filteredStudents.forEach(student => {
+                const row = document.createElement('tr');
+                row.dataset.studentId = student.id;
+                row.dataset.lastName = student.lastName;
+                row.dataset.givenName = student.givenName;
+                row.dataset.middleName = student.middleName;
+                row.dataset.extension = student.extension;
+                row.dataset.gradeLevel = student.gradeLevel;
+                row.dataset.section = student.section;
+
+                // Highlight row if it matches the current user's assigned grade level and section (for non-admin teachers)
+                if (currentUserRole.startsWith('Teacher') && currentUserRole !== 'Teacher - All Subjects' &&
+                    currentUserGradeLevels.includes(student.gradeLevel) &&
+                    currentUserSections.includes(student.section)) {
+                    row.classList.add('highlighted-row');
+                }
+
+                // Updated to display separate name fields
+                row.innerHTML = `
+                    <td class="p-3 border-b border-gray-200 font-medium text-gray-900">${student.lastName}</td>
+                    <td class="p-3 border-b border-gray-200">${student.givenName}</td>
+                    <td class="p-3 border-b border-gray-200">${student.middleName || ''}</td>
+                    <td class="p-3 border-b border-gray-200">${student.extension || ''}</td>
+                    <td class="p-3 border-b border-gray-200">${student.gradeLevel}</td>
+                    <td class="p-3 border-b border-gray-200">${student.section}</td>
+                    <td class="p-3 border-b border-gray-200">${student.sex}</td>
+                `;
+
+                // Add subject grade cells
+                Object.keys(subjects).forEach(subjectKey => {
+                    if (['Admin', 'Remarks'].includes(subjectKey)) return; // Skip these as they are handled separately
+
+                    const grade = student.grades[currentQuarter]?.[subjectKey] ?? null; // Get grade, can be null now
+                    const cell = document.createElement('td');
+                    cell.className = 'p-3 border-b border-gray-200';
+                    cell.dataset.subject = subjectKey;
+                    
+                    // Display grade or empty string if null
+                    cell.textContent = (grade !== null && typeof grade === 'number') ? grade.toFixed(2) : ''; 
+
+                    let isMapehSubSubject = mapehSubSubjects.includes(subjectKey);
+
+                    // Determine if the cell is editable
+                    let isEditable = false;
+                    if (subjectKey === 'MAPEH') { // Overall MAPEH is never directly editable
+                        isEditable = false;
+                    } else if (isAdmin) {
+                        isEditable = true;
+                    } else if (canEditAllSubjects) {
+                        isEditable = true;
+                    } else if (currentUserRole.startsWith('Teacher')) {
+                        // If it's a MAPEH sub-subject and the teacher is a MAPEH teacher, it's editable
+                        if (teacherSubject === 'MAPEH' && isMapehSubSubject) {
+                            isEditable = true;
+                        } else if (coreSubjects.includes(subjectKey) && subjects[subjectKey] === teacherSubject) {
+                            // It's a core subject (not MAPEH) and matches teacher's assigned subject
+                            isEditable = true;
+                        }
+                    }
+
+                    if (isEditable) {
+                        cell.classList.add('table-cell-editable');
+                        cell.contentEditable = true;
+                        cell.addEventListener('blur', (e) => handleGradeEdit(e, student.id, currentQuarter, subjectKey));
+                        cell.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault(); // Prevent new line in contenteditable
+                                e.target.blur(); // Trigger blur to save changes
+                            }
+                        });
+                    }
+
+                    // Hide columns not relevant to the teacher's subject if not admin/all subjects teacher
+                    const thElement = document.querySelector(`th[data-subject="${subjectKey}"]`);
+                    if (thElement && thElement.classList.contains('hidden')) {
+                        cell.classList.add('hidden');
+                    }
+                    row.appendChild(cell);
+                });
+
+                // General Average
+                const generalAvg = calculateGeneralAverage(student.grades[currentQuarter]);
+                const avgCell = document.createElement('td');
+                avgCell.className = 'p-3 border-b border-gray-200 font-semibold';
+                avgCell.textContent = generalAvg.toFixed(2);
+                row.appendChild(avgCell);
+
+                // Actions (Delete button for Admin)
+                const actionsCell = document.createElement('td');
+                actionsCell.className = 'p-3 border-b border-gray-200 delete-col';
+                if (isAdmin) {
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'delete-btn';
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.onclick = () => deleteStudent(student.id, student.lastName); // Use last name for confirmation
+                    actionsCell.appendChild(deleteButton);
+                } else {
+                    actionsCell.textContent = ''; // Empty for non-admin
+                }
+                row.appendChild(actionsCell);
+
+                // Remarks and Analyze Performance
+                const remarksCell = document.createElement('td');
+                remarksCell.className = 'p-3 border-b border-gray-200 text-sm';
+                const studentRemarks = student.remarks[currentQuarter] || 'No remarks.';
+                remarksCell.innerHTML = `
+                    <span>${studentRemarks}</span>
+                    <button class="generate-remarks-btn" ${canEditAllSubjects || (currentUserRole.startsWith('Teacher') && currentUserGradeLevels.includes(student.gradeLevel) && currentUserSections.includes(student.section)) ? '' : 'disabled'}>Generate Remarks</button>
+                    <button class="analyze-performance-btn" ${canEditAllSubjects || (currentUserRole.startsWith('Teacher') && currentUserGradeLevels.includes(student.gradeLevel) && currentUserSections.includes(student.section)) ? '' : 'disabled'}>Analyze Performance</button>
+                `;
+                remarksCell.querySelector('.generate-remarks-btn').addEventListener('click', () => handleGenerateRemarks(student.id));
+                remarksCell.querySelector('.analyze-performance-btn').addEventListener('click', () => handleAnalyzePerformance(student.id));
+                row.appendChild(remarksCell);
+
+                gradebookBody.appendChild(row);
+            });
+
+            // Update sort icons
+            document.querySelectorAll('.sortable-header').forEach(header => {
+                header.classList.remove('sort-asc', 'sort-desc');
+                const sortKey = header.dataset.sortKey;
+                if (sortKey === sortColumn) {
+                    header.classList.add(`sort-${sortDirection}`);
+                }
+            });
+        }
+
+        /**
+         * Handles grade cell editing and updates Firestore.
+         * @param {Event} event - The blur event.
+         * @param {string} studentId - The ID of the student.
+         * @param {string} quarter - The current quarter (e.g., 'Q1').
+         * @param {string} subjectKey - The key of the subject (e.g., 'Filipino').
+         */
+        async function handleGradeEdit(event, studentId, quarter, subjectKey) {
+            const newValue = event.target.textContent.trim();
+            let valueToSave = null;
+
+            if (newValue === '') {
+                valueToSave = null; // Store null if the cell is empty
+            } else {
+                const parsedValue = parseFloat(newValue);
+                if (isNaN(parsedValue) || parsedValue < 0 || parsedValue > 100) {
+                    showStatusMessage('Grade must be a number between 0 and 100.', 'error');
+                    // Revert to old value or clear
+                    const student = studentsData.find(s => s.id === studentId);
+                    event.target.textContent = student.grades[quarter]?.[subjectKey] ?? '';
+                    return;
+                }
+                valueToSave = parsedValue;
+            }
+
+            if (!db) {
+                showStatusMessage('Firestore not available. Grade not saved.', 'error');
+                return;
+            }
+
+            try {
+                const studentRef = doc(db, `artifacts/${appId}/public/data/students`, studentId);
+                const updatePath = `grades.${quarter}.${subjectKey}`;
+                await updateDoc(studentRef, { [updatePath]: valueToSave });
+                showStatusMessage('Grade updated successfully!', 'success');
+
+                // If a MAPEH sub-subject was edited, recalculate overall MAPEH
+                if (mapehSubSubjects.includes(subjectKey)) {
+                    await calculateAndSetMAPEHOverall(studentId, quarter);
+                }
+            } catch (e) {
+                console.error("Error updating grade:", e);
+                showStatusMessage('Failed to update grade. Please try again.', 'error');
+                // Revert to old value on error
+                const student = studentsData.find(s => s.id === studentId);
+                event.target.textContent = student.grades[quarter]?.[subjectKey] ?? '';
+            }
+        }
+
+        /**
+         * Calculates the general average for a given student's grades in a quarter.
+         * Excludes MAPEH sub-subjects from the overall average.
+         * @param {Object} quarterGrades - The grades object for a specific quarter.
+         * @returns {number} - The calculated general average.
+         */
+        function calculateGeneralAverage(quarterGrades) {
+            if (!quarterGrades) return 0;
+
+            let totalGrades = 0;
+            let subjectCount = 0;
+
+            coreSubjects.forEach(subjectKey => {
+                const grade = quarterGrades[subjectKey];
+                if (typeof grade === 'number' && !isNaN(grade)) {
+                    totalGrades += grade;
+                    subjectCount++;
+                }
+            });
+
+            return subjectCount > 0 ? totalGrades / subjectCount : 0;
+        }
+
+        /**
+         * Function to calculate and set the overall MAPEH grade based on its sub-components.
+         * @param {string} studentId - The ID of the student.
+         * @param {string} quarter - The current quarter (e.g., 'Q1').
+         */
+        async function calculateAndSetMAPEHOverall(studentId, quarter) {
+            const student = studentsData.find(s => s.id === studentId);
+            if (!student) return;
+
+            const quarterGrades = student.grades[quarter] || {};
+            let allSubGradesPresent = true;
+            let sumSubGrades = 0;
+
+            const subGrades = mapehSubSubjects.map(sub => {
+                const grade = quarterGrades[sub];
+                // Check if grade is a number and within valid range
+                if (typeof grade !== 'number' || isNaN(grade) || grade < 0 || grade > 100) {
+                    allSubGradesPresent = false;
+                }
+                return grade;
+            });
+
+            let overallMAPEHValue = null; // Default to null if not calculable
+
+            if (allSubGradesPresent) {
+                subGrades.forEach(grade => sumSubGrades += grade);
+                overallMAPEHValue = sumSubGrades / mapehSubSubjects.length;
+            }
+
+            // Update student data and Firestore
+            if (db) {
+                const studentRef = doc(db, `artifacts/${appId}/public/data/students`, studentId);
+                // Use null if overallMAPEHValue is null, otherwise use the calculated value
+                await updateDoc(studentRef, { [`grades.${quarter}.MAPEH`]: overallMAPEHValue });
+                console.log(`Updated MAPEH overall for ${student.lastName} in ${quarter} to ${overallMAPEHValue !== null ? overallMAPEHValue.toFixed(2) : 'null'}`);
+            } else {
+                // Demo mode: update local data
+                student.grades[quarter].MAPEH = overallMAPEHValue;
+                renderGradebook(); // Re-render to show update
+            }
+        }
+
+        /**
+         * Adds a new student to the Firestore database.
+         */
+        async function addStudent() {
+            const lastName = newStudentLastNameInput.value.trim();
+            const givenName = newStudentGivenNameInput.value.trim();
+            const middleName = newStudentMiddleNameInput.value.trim();
+            const extension = newStudentExtensionInput.value.trim();
+            const gradeLevel = parseInt(newStudentGradeLevelInput.value.trim());
+            const section = newStudentSectionInput.value.trim();
+            const sex = newStudentSexSelect.value;
+
+            if (!lastName || !givenName || isNaN(gradeLevel) || gradeLevel < 1 || gradeLevel > 12 || !section || !sex) {
+                addStudentMessage.textContent = 'Please fill in Last Name, Given Name, Grade Level (1-12), Section, and Sex correctly.';
+                return;
+            }
+            addStudentMessage.textContent = ''; // Clear previous errors
+
+            if (!db) {
+                showStatusMessage('Firestore not available. Cannot add student.', 'error');
+                return;
+            }
+
+            try {
+                const studentsColRef = collection(db, `artifacts/${appId}/public/data/students`);
+                const newStudentData = {
+                    lastName,
+                    givenName,
+                    middleName: middleName || '',
+                    extension: extension || '',
+                    gradeLevel,
+                    section,
+                    sex,
+                    grades: {
+                        Q1: { 'MAPEH-Music': null, 'MAPEH-Arts': null, 'MAPEH-PE': null, 'MAPEH-Health': null, MAPEH: null }, // Initialize MAPEH components to null
+                        Q2: { 'MAPEH-Music': null, 'MAPEH-Arts': null, 'MAPEH-PE': null, 'MAPEH-Health': null, MAPEH: null },
+                        Q3: { 'MAPEH-Music': null, 'MAPEH-Arts': null, 'MAPEH-PE': null, 'MAPEH-Health': null, MAPEH: null },
+                        Q4: { 'MAPEH-Music': null, 'MAPEH-Arts': null, 'MAPEH-PE': null, 'MAPEH-Health': null, MAPEH: null }
+                    },
+                    remarks: {
+                        Q1: '', Q2: '', Q3: '', Q4: ''
+                    }
+                };
+                await addDoc(studentsColRef, newStudentData);
+                showStatusMessage('Student added successfully!', 'success');
+                // Clear form
+                newStudentLastNameInput.value = '';
+                newStudentGivenNameInput.value = '';
+                newStudentMiddleNameInput.value = '';
+                newStudentExtensionInput.value = '';
+                newStudentGradeLevelInput.value = '';
+                newStudentSectionInput.value = '';
+                newStudentSexSelect.value = '';
+            } catch (e) {
+                console.error("Error adding student:", e);
+                addStudentMessage.textContent = 'Failed to add student. Please try again.';
+            }
+        }
+
+        /**
+         * Deletes a student from the Firestore database after confirmation.
+         * @param {string} studentId - The ID of the student to delete.
+         * @param {string} studentLastName - The last name of the student for the confirmation message.
+         */
+        async function deleteStudent(studentId, studentLastName) {
+            const confirmed = await customConfirm(`Are you sure you want to delete ${studentLastName}? This action cannot be undone.`);
+            if (!confirmed) return;
+
+            if (!db) {
+                showStatusMessage('Firestore not available. Cannot delete student.', 'error');
+                return;
+            }
+
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/public/data/students`, studentId));
+                showStatusMessage('Student deleted successfully!', 'success');
+            } catch (e) {
+                console.error("Error deleting student:", e);
+                showStatusMessage('Failed to delete student. Please try again.', 'error');
+            }
+        }
+
+        /**
+         * Renders the user list in the user management modal.
+         */
+        function renderUserList() {
+            userListBody.innerHTML = '';
+            usersData.forEach(user => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${user.username}</td>
+                    <td>${user.role}</td>
+                    <td>${user.gradeLevels ? user.gradeLevels.join(', ') : 'N/A'}</td>
+                    <td>${user.sections ? user.sections.join(', ') : 'N/A'}</td>
+                    <td class="action-buttons-container">
+                        ${user.role !== 'Admin' ? `<button class="delete-user-btn" data-user-id="${user.id}">Delete</button>` : ''}
+                        <button class="show-password-btn" data-user-id="${user.id}" data-password="${user.password}">Show Pass</button>
+                        <button class="assign-password-btn" data-user-id="${user.id}">Assign Pass</button>
+                    </td>
+                `;
+                userListBody.appendChild(row);
+            });
+
+            // Add event listeners for delete and password buttons
+            userListBody.querySelectorAll('.delete-user-btn').forEach(button => {
+                button.addEventListener('click', (e) => deleteUser(e.target.dataset.userId));
+            });
+            userListBody.querySelectorAll('.show-password-btn').forEach(button => {
+                button.addEventListener('click', (e) => showUserPassword(e.target));
+            });
+            userListBody.querySelectorAll('.assign-password-btn').forEach(button => {
+                button.addEventListener('click', (e) => showAssignPasswordInput(e.target));
+            });
+        }
+
+        /**
+         * Handles showing the password for a user.
+         * @param {HTMLElement} button - The button that was clicked.
+         */
+        function showUserPassword(button) {
+            const password = button.dataset.password;
+            const originalText = button.textContent;
+            button.textContent = `Pass: ${password}`;
+            button.disabled = true; // Disable to prevent repeated clicks
+
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+            }, 3000); // Hide after 3 seconds
+        }
+
+        /**
+         * Shows the input fields to assign a new password to a user.
+         * @param {HTMLElement} button - The assign password button clicked.
+         */
+        function showAssignPasswordInput(button) {
+            const userIdToModify = button.dataset.userId;
+            const cell = button.closest('td');
+            cell.innerHTML = `
+                <div class="password-reset-input-group">
+                    <input type="text" placeholder="New Password" id="newPassword-${userIdToModify}">
+                    <button class="set-btn" data-user-id="${userIdToModify}">Set</button>
+                    <button class="cancel-btn">Cancel</button>
+                </div>
+            `;
+            cell.querySelector('.set-btn').addEventListener('click', (e) => assignNewUserPassword(e.target.dataset.userId, cell.querySelector(`#newPassword-${userIdToModify}`).value));
+            cell.querySelector('.cancel-btn').addEventListener('click', () => renderUserList()); // Re-render to revert
+        }
+
+        /**
+         * Assigns a new password to a user in Firestore.
+         * @param {string} userId - The ID of the user to modify.
+         * @param {string} newPassword - The new password to set.
+         */
+        async function assignNewUserPassword(userId, newPassword) {
+            if (!newPassword) {
+                showStatusMessage('Password cannot be empty.', 'error');
+                return;
+            }
+            if (!db) {
+                showStatusMessage('Firestore not available. Cannot assign password.', 'error');
+                return;
+            }
+
+            try {
+                const userRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
+                await updateDoc(userRef, { password: newPassword });
+                showStatusMessage('Password updated successfully!', 'success');
+                renderUserList(); // Re-render to update UI
+            } catch (e) {
+                console.error("Error updating password:", e);
+                showStatusMessage('Failed to update password. Please try again.', 'error');
+            }
+        }
+
+        /**
+         * Deletes a user (teacher) from the Firestore database.
+         * @param {string} userId - The ID of the user to delete.
+         */
+        async function deleteUser(userId) {
+            const confirmed = await customConfirm('Are you sure you want to delete this teacher account?');
+            if (!confirmed) return;
+
+            if (!db) {
+                showStatusMessage('Firestore not available. Cannot delete user.', 'error');
+                return;
+            }
+
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/public/data/users`, userId));
+                showStatusMessage('Teacher account deleted successfully!', 'success');
+            }
+            catch (e) {
+                console.error("Error deleting user:", e);
+                showStatusMessage('Failed to delete teacher account. Please try again.', 'error');
+            }
+        }
+
+        /**
+         * Adds a new teacher user to the Firestore database.
+         */
+        async function addTeacher(event) {
+            event.preventDefault(); // Prevent form submission default behavior
+
+            const username = newTeacherUsernameInput.value.trim();
+            const password = newTeacherPasswordInput.value.trim();
+            const role = newTeacherRoleSelect.value;
+            const gradeLevels = newTeacherGradeLevelsInput.value.split(',').map(g => parseInt(g.trim())).filter(g => !isNaN(g));
+            const sections = newTeacherSectionsInput.value.split(',').map(s => s.trim()).filter(s => s !== '');
+
+            if (!username || !password || role === 'None') {
+                addTeacherMessage.textContent = 'Username, password, and role are required.';
+                return;
+            }
+            if ((role.startsWith('Teacher') && role !== 'Teacher - All Subjects') && (gradeLevels.length === 0 || sections.length === 0)) {
+                addTeacherMessage.textContent = 'Grade levels and sections are required for specific teacher roles.';
+                return;
+            }
+            addTeacherMessage.textContent = ''; // Clear previous errors
+
+            if (!db) {
+                showStatusMessage('Firestore not available. Cannot add teacher.', 'error');
+                return;
+            }
+
+            try {
+                const usersColRef = collection(db, `artifacts/${appId}/public/data/users`);
+                const existingUser = usersData.find(u => u.username === username);
+                if (existingUser) {
+                    addTeacherMessage.textContent = 'Username already exists.';
+                    return;
+                }
+
+                const newUserData = {
+                    username,
+                    password, // In a real app, hash this!
+                    role,
+                    gradeLevels: gradeLevels.length > 0 ? gradeLevels : [],
+                    sections: sections.length > 0 ? sections : [],
+                    userId: crypto.randomUUID() // Generate a unique user ID
+                };
+                await addDoc(usersColRef, newUserData);
+                showStatusMessage('Teacher account added successfully!', 'success');
+                // Clear form
+                addUserForm.reset();
+            } catch (e) {
+                console.error("Error adding teacher:", e);
+                addTeacherMessage.textContent = 'Failed to add teacher account. Please try again.';
+            }
+        }
+
+        /**
+         * Handles the login process.
+         */
+        async function handleLogin() {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!username || !password) {
+                loginMessage.textContent = 'Please enter both username and password.';
+                return;
+            }
+            loginMessage.textContent = '';
+
+            const user = usersData.find(u => u.username === username && u.password === password);
+
+            if (user) {
+                if (db) {
+                    // In a real app, this would involve Firebase Auth signInWithEmailAndPassword or similar.
+                    // For this simulation, we manually set the user's role and state.
+                    // For demo purposes, we don't actually sign in with Firebase Auth.
+                    currentUserRole = user.role;
+                    currentUserGradeLevels = user.gradeLevels || [];
+                    currentUserSections = user.sections || [];
+                    // Simulate login state
+                    loginScreen.classList.add('hidden');
+                    mainAppContainer.classList.remove('hidden');
+                    roleSelector.value = currentUserRole;
+                    applyPermissions();
+                    renderGradebook();
+                    updateChart();
+                    showStatusMessage(`Welcome, ${username}! Logged in as ${currentUserRole}.`, 'success');
+                } else {
+                    // For demo mode without Firebase, directly apply permissions and show main app
+                    currentUserRole = user.role;
+                    currentUserGradeLevels = user.gradeLevels || [];
+                    currentUserSections = [];
+                    loginScreen.classList.add('hidden');
+                    mainAppContainer.classList.remove('hidden');
+                    roleSelector.value = currentUserRole;
+                    applyPermissions();
+                    renderGradebook();
+                    updateChart();
+                    showStatusMessage(`Welcome, ${username}! Logged in as ${currentUserRole} (Demo Mode).`, 'success');
+                }
+            } else {
+                loginMessage.textContent = 'Invalid username or password.';
+            }
+        }
+
+        /**
+         * Handles the logout process.
+         */
+        function handleLogout() {
+            // Clear current user data and show login screen
+            currentUserRole = 'None';
+            currentUserGradeLevels = [];
+            currentUserSections = [];
+            usernameInput.value = '';
+            passwordInput.value = '';
+            loginScreen.classList.remove('hidden');
+            mainAppContainer.classList.add('hidden');
+            roleSelector.value = 'None'; // Reset selector
+            applyPermissions(); // Apply logged out permissions
+            showStatusMessage('Logged out successfully.', 'info');
+            if (db) {
+                auth.signOut().then(() => {
+                    console.log("Firebase user signed out.");
+                }).catch((error) => {
+                    console.error("Error signing out Firebase user:", error);
+                });
+            }
+        }
+
+        /**
+         * Generates remarks for a student using the Gemini API.
+         * @param {string} studentId - The ID of the student.
+         */
+        async function handleGenerateRemarks(studentId) {
+            const student = studentsData.find(s => s.id === studentId);
+            if (!student) return;
+
+            const currentQuarter = quarterSelector.value;
+            const grades = student.grades[currentQuarter];
+            const studentFullName = `${student.givenName} ${student.middleName ? student.middleName + ' ' : ''}${student.lastName}${student.extension ? ' ' + student.extension : ''}`.trim();
+
+
+            if (!grades || Object.keys(grades).length === 0) {
+                showStatusMessage('No grades available for this student in the current quarter to generate remarks.', 'error');
+                return;
+            }
+
+            const gradesString = Object.entries(grades)
+                .map(([subject, grade]) => `${subjects[subject] || subject}: ${grade}`)
+                .join(', ');
+
+            const prompt = `Generate a concise, positive, and constructive report card remark for ${studentFullName} for the ${currentQuarter} based on these grades: ${gradesString}. If grades are generally good, mention areas of strength. If grades are mixed or low, gently suggest areas for improvement. Keep it professional and encouraging. Limit to 2-3 sentences.`;
+
+            // Update UI to show loading
+            const remarksCell = document.querySelector(`tr[data-student-id="${studentId}"] td[data-subject="Remarks"]`);
+            if (remarksCell) {
+                remarksCell.querySelector('span').textContent = 'Generating remarks...';
+                remarksCell.querySelector('.generate-remarks-btn').disabled = true;
+                remarksCell.querySelector('.analyze-performance-btn').disabled = true;
+            }
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const generatedRemarks = result.candidates[0].content.parts[0].text;
+                    // Update student data and Firestore
+                    if (db) {
+                        const studentRef = doc(db, `artifacts/${appId}/public/data/students`, studentId);
+                        const updatePath = `remarks.${currentQuarter}`;
+                        await updateDoc(studentRef, { [updatePath]: generatedRemarks });
+                        showStatusMessage('Remarks generated and saved!', 'success');
+                    } else {
+                        // Update mock data for non-Firebase demo
+                        const mockStudent = studentsData.find(s => s.id === studentId);
+                        if (mockStudent) {
+                            if (!mockStudent.remarks) mockStudent.remarks = {};
+                            mockStudent.remarks[currentQuarter] = generatedRemarks;
+                            renderGradebook(); // Re-render to show updated remarks
+                            showStatusMessage('Remarks generated (Demo Mode)!', 'success');
+                        }
+                    }
+                } else {
+                    throw new Error("Invalid response structure from Gemini API.");
+                }
+            } catch (error) {
+                console.error("Error generating remarks:", error);
+                showStatusMessage('Failed to generate remarks. API error.', 'error');
+            } finally {
+                // Re-enable buttons after operation
+                const remarksCell = document.querySelector(`tr[data-student-id="${studentId}"] td[data-subject="Remarks"]`);
+                if (remarksCell) {
+                    remarksCell.querySelector('.generate-remarks-btn').disabled = false;
+                    remarksCell.querySelector('.analyze-performance-btn').disabled = false;
+                }
+                renderGradebook(); // Ensure remarks are updated if they were saved locally or show default
+            }
+        }
+
+
+        /**
+         * Analyzes student performance using the Gemini API and displays results in a modal.
+         * @param {string} studentId - The ID of the student.
+         */
+        async function handleAnalyzePerformance(studentId) {
+            const student = studentsData.find(s => s.id === studentId);
+            if (!student) return;
+
+            const studentFullName = `${student.givenName} ${student.middleName ? student.middleName + ' ' : ''}${student.lastName}${student.extension ? ' ' + student.extension : ''}`.trim();
+            const allQuarterGrades = student.grades;
+
+            analysisModalOverlay.classList.add('visible');
+            analysisContent.innerHTML = '<div class="loading-message">Analyzing student performance...</div>';
+            suggestCurriculumButton.disabled = true; // Disable until analysis is done
+
+            const gradeDataForAnalysis = {};
+            Object.keys(allQuarterGrades).forEach(q => {
+                gradeDataForAnalysis[q] = Object.entries(allQuarterGrades[q])
+                    .map(([subject, grade]) => `${subjects[subject] || subject}: ${grade}`)
+                    .join('; ');
+            });
+
+            const prompt = `Provide a comprehensive performance analysis for ${studentFullName} based on their quarterly grades: ${JSON.stringify(gradeDataForAnalysis)}. 
+                            Identify strengths, weaknesses (specific subjects or quarters), and overall trends (improvement, decline, consistency). 
+                            Suggest specific actionable advice for the student to improve. Structure the response with clear headings for Strengths, Weaknesses/Areas for Improvement, Trends, and Actionable Advice. Use bullet points for lists. Make it professional and encouraging.`;
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const analysisText = result.candidates[0].content.parts[0].text;
+                    analysisContent.innerHTML = formatAnalysisText(analysisText);
+                    suggestCurriculumButton.dataset.studentId = student.id; // Store student ID for curriculum suggestion
+                    suggestCurriculumButton.disabled = false;
+                } else {
+                    analysisContent.innerHTML = '<p class="text-red-500">Failed to generate analysis. Invalid API response.</p>';
+                }
+            } catch (error) {
+                console.error("Error analyzing performance:", error);
+                analysisContent.innerHTML = `<p class="text-red-500">Error: Could not retrieve performance analysis. ${error.message}</p>`;
+            }
+        }
+
+        /**
+         * Formats raw text analysis into HTML for display.
+         * @param {string} text - The raw analysis text from the API.
+         * @returns {string} - HTML formatted text.
+         */
+        function formatAnalysisText(text) {
+            let html = text.replace(/\*\*(.*?)\*\*/g, '<h4>$1</h4>'); // Bold for headings
+            html = html.replace(/^- (.*)/gm, '<li>$1</li>'); // Convert bullet points
+            html = `<ul>${html}</ul>`; // Wrap lists in ul
+            return html;
+        }
+
+        /**
+         * Suggests curriculum adjustments based on student performance using the Gemini API.
+         * @param {string} studentId - The ID of the student.
+         */
+        async function suggestCurriculum(studentId) {
+            const student = studentsData.find(s => s.id === studentId);
+            if (!student) return;
+
+            const studentFullName = `${student.givenName} ${student.middleName ? student.middleName + ' ' : ''}${student.lastName}${student.extension ? ' ' + student.extension : ''}`.trim();
+            const allQuarterGrades = student.grades;
+
+            analysisContent.innerHTML = '<div class="loading-message">Generating curriculum suggestions...</div>';
+            suggestCurriculumButton.disabled = true;
+
+            const gradeDataForPrompt = {};
+            Object.keys(allQuarterGrades).forEach(q => {
+                gradeDataForPrompt[q] = Object.entries(allQuarterGrades[q])
+                    .map(([subject, grade]) => `${subjects[subject] || subject}: ${grade}`)
+                    .join('; ');
+            });
+
+            const prompt = `Based on ${studentFullName}'s quarterly grades: ${JSON.stringify(gradeDataForPrompt)}, suggest specific curriculum adjustments or supplementary learning resources. Consider areas of weakness and provide recommendations for academic enrichment. Focus on practical, educational suggestions. Structure the response with clear headings for each suggestion. Use bullet points for resources. Limit to 3-5 distinct suggestions.`;
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const curriculumText = result.candidates[0].content.parts[0].text;
+                    analysisContent.innerHTML = `<h3>Curriculum Suggestions for ${studentFullName}</h3>` + formatAnalysisText(curriculumText);
+                } else {
+                    analysisContent.innerHTML = '<p class="text-red-500">Failed to generate curriculum suggestions. Invalid API response.</p>';
+                }
+            } catch (error) {
+                console.error("Error suggesting curriculum:", error);
+                analysisContent.innerHTML = `<p class="text-red-500">Error: Could not retrieve curriculum suggestions. ${error.message}</p>`;
+            } finally {
+                suggestCurriculumButton.disabled = false;
+            }
+        }
+
+
+        /**
+         * Updates the grade distribution chart based on current filtered students and selected quarter.
+         */
+        function updateChart() {
+            const currentQuarter = quarterSelector.value;
+            const filteredStudents = getFilteredStudents();
+
+            const grades = filteredStudents.map(s => calculateGeneralAverage(s.grades[currentQuarter]));
+
+            const gradeBins = { '90-100': 0, '80-89': 0, '70-79': 0, 'Below 70': 0 };
+
+            grades.forEach(grade => {
+                if (grade >= 90) gradeBins['90-100']++;
+                else if (grade >= 80) gradeBins['80-89']++;
+                else if (grade >= 70) gradeBins['70-79']++;
+                else gradeBins['Below 70']++;
+            });
+
+            const labels = Object.keys(gradeBins);
+            const data = Object.values(gradeBins);
+
+            if (gradeChart) {
+                gradeChart.data.labels = labels;
+                gradeChart.data.datasets[0].data = data;
+                gradeChart.update();
+            } else {
+                const ctx = document.getElementById('gradeDistributionChart').getContext('2d');
+                gradeChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: `Number of Students in ${currentQuarter}`,
+                            data: data,
+                            backgroundColor: [
+                                '#4CAF50', // Green for 90-100
+                                '#8BC34A', // Light Green for 80-89
+                                '#FFC107', // Amber for 70-79
+                                '#FF5722'  // Deep Orange for Below 70
+                            ],
+                            borderColor: [
+                                '#388E3C',
+                                '#689F38',
+                                '#FFA000',
+                                '#E64A19'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `Grade Distribution for ${currentQuarter}`,
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Number of Students'
+                                },
+                                ticks: {
+                                    precision: 0 // Ensure integer ticks for student count
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Grade Range'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        /**
+         * Handles printing the gradebook.
+         */
+        function printGradebook() {
+            const currentQuarterText = quarterSelector.options[quarterSelector.selectedIndex].text;
+            const gradeLevelFilterText = gradeLevelFilter.value === 'All' ? 'All Grade Levels' : `Grade Level ${gradeLevelFilter.value}`;
+            const printTitleElement = document.querySelector('.print-title');
+            printTitleElement.textContent = `Student Grade Sheet - ${currentQuarterText} (${gradeLevelFilterText})`;
+
+            window.print();
+        }
+
+
+        // Event Listeners
+        loginButton.addEventListener('click', handleLogin);
+        logoutButton.addEventListener('click', handleLogout);
+
+        roleSelector.addEventListener('change', () => {
+            const selectedUser = usersData.find(u => u.role === roleSelector.value);
+            if (selectedUser) {
+                currentUserRole = selectedUser.role;
+                currentUserGradeLevels = selectedUser.gradeLevels || [];
+                currentUserSections = selectedUser.sections || [];
+            } else {
+                currentUserRole = 'None';
+                currentUserGradeLevels = [];
+                currentUserSections = [];
+            }
+            applyPermissions();
+        });
+
+        quarterSelector.addEventListener('change', () => {
+            renderGradebook();
+            updateChart();
+        });
+
+        gradeLevelFilter.addEventListener('change', () => {
+            renderGradebook();
+            updateChart();
+        });
+
+        addStudentButton.addEventListener('click', addStudent);
+        manageUsersButton.addEventListener('click', () => {
+            if (currentUserRole === 'Admin') {
+                userManagementModalOverlay.classList.add('visible');
+                renderUserList();
+            } else {
+                showStatusMessage('You do not have permission to manage users.', 'error');
+            }
+        });
+        closeUserManagementModalButton.addEventListener('click', () => {
+            userManagementModalOverlay.classList.remove('visible');
+            addTeacherMessage.textContent = ''; // Clear message on close
+            addUserForm.reset(); // Clear add user form
+        });
+
+        addUserForm.addEventListener('submit', addTeacher);
+
+        printGradebookButton.addEventListener('click', printGradebook);
+
+        suggestCurriculumButton.addEventListener('click', (e) => {
+            const studentId = e.target.dataset.studentId;
+            if (studentId) {
+                suggestCurriculum(studentId);
+            }
+        });
+
+        closeAnalysisModalButton.addEventListener('click', () => {
+            analysisModalOverlay.classList.remove('visible');
+            analysisContent.innerHTML = ''; // Clear content
+            suggestCurriculumButton.removeAttribute('data-student-id'); // Clear student ID
+            suggestCurriculumButton.disabled = false; // Reset state
+        });
+
+
+        // Initial setup on page load (after Firebase auth state is ready or in demo mode)
+        window.onload = () => {
+            // If Firebase is not configured, ensure UI is set up for demo mode
+            if (!db) {
+                setupMockDataAndUI();
+            }
+            // If Firebase is configured, the onAuthStateChanged listener handles the initial setup.
+            // However, ensure a default state is rendered if Firebase setup is asynchronous
+            // and data might not be ready instantly.
+            if (mainAppContainer.classList.contains('hidden') && !loginScreen.classList.contains('hidden')) {
+                // Application is in login state, no need to render gradebook yet
+            } else {
+                renderGradebook();
+                updateChart();
+            }
+        };
+
+    </script>
+</body>
+</html>
